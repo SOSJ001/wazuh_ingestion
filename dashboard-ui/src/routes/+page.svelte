@@ -1,18 +1,23 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { tick } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import type { Alert } from '$lib/types/alert';
 	import AlertDetailModal from '$lib/components/AlertDetailModal.svelte';
+	import { clearStoredToken, getAuthToken } from '$lib/auth';
 
 	const API_BASE = 'http://127.0.0.1:8000';
 	const PAGE_SIZE = 15;
+	const AUTO_REFRESH_MS = 15000;
 
 	let alerts = $state<Alert[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let verifyingId = $state<string | null>(null);
 	let selectedAlert = $state<Alert | null>(null);
+	let lastUpdatedAt = $state<Date | null>(null);
+	let activeRequest = $state(false);
 
 	type AgentFilterMode = 'all' | 'include' | 'exclude';
 	let agentFilterMode = $state<AgentFilterMode>('all');
@@ -69,25 +74,57 @@
 		return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
 	}
 
+	function integrityClass(status: Alert['integrity_status']): string {
+		if (status === 'valid') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200';
+		if (status === 'invalid') return 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200';
+		return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+	}
+
+	function integrityLabel(status: Alert['integrity_status']): string {
+		if (status === 'valid') return 'Valid';
+		if (status === 'invalid') return 'Invalid';
+		return 'Missing';
+	}
+
+	async function apiFetch(path: string, init: RequestInit = {}) {
+		const token = getAuthToken();
+		if (!token) {
+			await goto('/login');
+			throw new Error('Missing auth token. Redirecting to login.');
+		}
+		const headers = new Headers(init.headers ?? {});
+		headers.set('Authorization', `Bearer ${token}`);
+		const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+		if (res.status === 401) {
+			clearStoredToken();
+			await goto('/login');
+		}
+		return res;
+	}
+
 	async function fetchAlerts() {
+		if (activeRequest) return;
+		activeRequest = true;
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(`${API_BASE}/alerts`);
+			const res = await apiFetch('/alerts');
 			if (!res.ok) throw new Error(`API ${res.status}`);
 			alerts = await res.json();
+			lastUpdatedAt = new Date();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load alerts';
 			alerts = [];
 		} finally {
 			loading = false;
+			activeRequest = false;
 		}
 	}
 
 	async function verify(id: string) {
 		verifyingId = id;
 		try {
-			const res = await fetch(`${API_BASE}/verify/${encodeURIComponent(id)}`, {
+			const res = await apiFetch(`/verify/${encodeURIComponent(id)}`, {
 				method: 'POST'
 			});
 			if (!res.ok) throw new Error('Verify failed');
@@ -99,8 +136,26 @@
 		}
 	}
 
+	function formatLastUpdated(ts: Date | null): string {
+		return ts ? ts.toLocaleTimeString() : 'Not synced yet';
+	}
+
 	$effect(() => {
 		fetchAlerts();
+		const intervalId = window.setInterval(() => {
+			if (!document.hidden && !selectedAlert && !verifyingId) fetchAlerts();
+		}, AUTO_REFRESH_MS);
+		const onVisible = () => {
+			if (!document.hidden) fetchAlerts();
+		};
+		const onFocus = () => fetchAlerts();
+		document.addEventListener('visibilitychange', onVisible);
+		window.addEventListener('focus', onFocus);
+		return () => {
+			window.clearInterval(intervalId);
+			document.removeEventListener('visibilitychange', onVisible);
+			window.removeEventListener('focus', onFocus);
+		};
 	});
 
 	function handleClickOutside(e: MouseEvent) {
@@ -119,36 +174,17 @@
 			<h1 class="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl">Unverified alerts</h1>
 			<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Review and mark alerts as verified for human-in-the-loop.</p>
 		</div>
-		<button
-			type="button"
-			onclick={fetchAlerts}
-			disabled={loading}
-			class="inline-flex min-h-[44px] min-w-[7rem] shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:scale-[1.02] hover:bg-slate-50 active:scale-[0.98] disabled:scale-100 disabled:opacity-80 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-		>
-			{#if loading}
-				<span
-					class="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent dark:border-slate-500"
-					aria-hidden="true"
-				></span>
-				<span>Refreshing…</span>
-			{:else}
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="1.5"
-					stroke="currentColor"
-					class="h-4 w-4"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-					/>
-				</svg>
-				Refresh
+		<div class="flex flex-wrap items-center justify-end gap-2 text-xs sm:text-sm">
+			<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+				<span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+				Live
+			</span>
+			<span class="text-slate-500 dark:text-slate-400">Auto-refresh every {Math.round(AUTO_REFRESH_MS / 1000)}s</span>
+			<span class="text-slate-500 dark:text-slate-400">Last updated: {formatLastUpdated(lastUpdatedAt)}</span>
+			{#if activeRequest}
+				<span class="text-emerald-600 dark:text-emerald-400">Updating…</span>
 			{/if}
-		</button>
+		</div>
 	</div>
 
 	{#if error}
@@ -355,6 +391,12 @@
 							>
 								Log
 							</th>
+							<th
+								scope="col"
+								class="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:px-5 sm:py-3.5"
+							>
+								Integrity
+							</th>
 							<th scope="col" class="relative px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:px-5 sm:py-3.5">
 								<span class="sr-only">Action</span>
 							</th>
@@ -398,6 +440,11 @@
 											return log ? `${log.slice(0, 72)}${log.length > 72 ? '…' : ''}` : '—';
 										})()}
 									</code>
+								</td>
+								<td class="whitespace-nowrap px-3 py-2.5 sm:px-5 sm:py-3.5">
+									<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium {integrityClass(alert.integrity_status)}">
+										{integrityLabel(alert.integrity_status)}
+									</span>
 								</td>
 								<td class="whitespace-nowrap px-3 py-2.5 text-right sm:px-5 sm:py-3.5">
 									<div class="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">

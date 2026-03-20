@@ -71,6 +71,22 @@
 				>
 					Verified
 				</a>
+				<a
+					href="/status"
+					class="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors sm:min-h-0 sm:min-w-0 sm:px-4 {$page.url.pathname.startsWith('/status')
+						? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300'
+						: 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'}"
+				>
+					Status
+				</a>
+				<a
+					href="/login"
+					class="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors sm:min-h-0 sm:min-w-0 sm:px-4 {$page.url.pathname.startsWith('/login')
+						? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-700 dark:text-emerald-300'
+						: 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'}"
+				>
+					Login
+				</a>
 			</nav>
 			<button
 				type="button"
