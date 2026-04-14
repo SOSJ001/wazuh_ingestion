@@ -1,6 +1,7 @@
 # Wazuh Ingestion Secure Setup Runbook (Windows PowerShell)
 
 This guide lets you deploy this project on a new device/environment with:
+
 - TLS verification
 - SSH host verification
 - HMAC integrity checks
@@ -130,6 +131,7 @@ python wazuh_ingestion.py
 ```
 
 Expected healthy log:
+
 - `Authenticating as ... (via SSH tunnel)`
 - `Success! API token: ...`
 - `Success! Fetched ... raw alerts.`
@@ -202,49 +204,90 @@ curl -H "Authorization: Bearer $tok" http://127.0.0.1:8000/system/config
 ```
 
 Expected:
+
 - `/system/health` returns poll timestamps, poll status, inserted count, validation reject count.
 - `/system/config` returns safe non-secret security/config flags.
 
 Without bearer token, both should return `401`.
 
+### 8.6 Ingestion lag statistics (dissertation / evaluation)
+
+```powershell
+cd $Project
+python scripts/ingestion_lag_report.py --limit 50
+```
+
+Optional: `python scripts/ingestion_lag_report.py --limit 100 --csv lag_report.csv`
+
+### 8.7 Raw vs normalized alert (evaluation / documentation)
+
+Prints raw indexer JSON alongside the normalized SQLite row fields (same mapping as ingestion). From repo root:
+
+```powershell
+cd $Project
+python scripts/show_normalization_diff.py --from-indexer
+```
+
+From a saved JSON file:
+
+```powershell
+python scripts/show_normalization_diff.py --raw-file sample_alert.json
+```
+
+Optional: `python scripts/show_normalization_diff.py --from-indexer --output-json comparison.json`
+
+Requires the same trust and tunnel env as ingestion when using `--from-indexer` (CA cert, known_hosts, SSH user, indexer basic auth).
+
 ## 9) Troubleshooting (common errors)
 
 ### Error: `Set WAZUH_CA_CERT_PATH ... file exists`
+
 - Path wrong or file missing.
 - Fix by verifying with:
+
 ```powershell
 Test-Path "$CertDir\wazuh-endpoints-bundle.pem"
 ```
 
 ### Error: `Invalid known hosts entry`
+
 - Recreate known_hosts:
+
 ```powershell
 ssh-keyscan -H -t rsa,ecdsa 192.168.56.103 | Set-Content -Encoding ascii "$SshDir\known_hosts"
 ```
 
 ### Error: `certificate verify failed: IP address mismatch`
+
 - Use SSH tunnel to manager (already implemented), so TLS sees `localhost`.
 
 ### Error: `certificate verify failed: self-signed certificate`
+
 - Bundle missing cert used by that endpoint. Rebuild `wazuh-endpoints-bundle.pem`.
 
 ### Error: `Indexer request failed ...`
+
 - Could be TLS/auth/tunnel. Test manually:
+
 ```powershell
 curl.exe -k -u admin:admin "https://127.0.0.1:9200/wazuh-alerts*/_search?size=1"
 ```
+
 Then test with bundle:
+
 ```powershell
 curl.exe --ssl-no-revoke --cacert "$CertDir\wazuh-endpoints-bundle.pem" -u admin:admin "https://127.0.0.1:9200/wazuh-alerts*/_search?size=1"
 ```
 
 ### Error: `Schema validation rejected alert`
+
 - This means the incoming event did not fit the normalized schema.
 - Ingestion continues for valid alerts; review the logged error snippet and source event fields.
 
 ## 10) Migration checklist for another device/architecture
 
 On the new host:
+
 - Clone project
 - Install Python + Node + SSH client
 - Copy/collect fresh certs from VM

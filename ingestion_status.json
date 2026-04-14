@@ -1,8 +1,8 @@
 {
-  "last_poll_started_at": "2026-03-20T12:05:33.331234+00:00",
-  "last_poll_completed_at": "2026-03-20T12:05:36.787255+00:00",
-  "last_poll_status": "ok",
-  "last_error": null,
-  "last_inserted_count": 3,
+  "last_poll_started_at": "2026-04-06T19:40:08.281857+00:00",
+  "last_poll_completed_at": "2026-04-06T19:40:23.288606+00:00",
+  "last_poll_status": "error",
+  "last_error": "",
+  "last_inserted_count": 0,
   "last_validation_reject_count": 0
 }

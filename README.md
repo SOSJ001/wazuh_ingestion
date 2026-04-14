@@ -2,17 +2,22 @@
 
 Ingestion of Wazuh alerts into a SQLite database, with a FastAPI backend and SvelteKit dashboard for human-in-the-loop verification.
 
+For a **single end-to-end guide** (lab setup, trust material, `.env`, run order, validation, evaluation scripts, troubleshooting summary) suitable as a dissertation appendix, see [docs/APPENDIX_COMPLETE_SETUP_AND_OPERATIONS.md](docs/APPENDIX_COMPLETE_SETUP_AND_OPERATIONS.md).
+
 ## Run order
 
 1. **Ingestion script** (optional but recommended for live data):
+
    ```bash
    python wazuh_ingestion.py
    ```
 
 2. **API** (backend for the dashboard):
+
    ```bash
    python api.py
    ```
+
    Or: `uvicorn api:app --host 127.0.0.1 --port 8000`
 
 3. **Dashboard** (frontend):
@@ -20,7 +25,7 @@ Ingestion of Wazuh alerts into a SQLite database, with a FastAPI backend and Sve
    cd dashboard-ui && npm run dev
    ```
 
-- **Dashboard:** http://localhost:5173  
+- **Dashboard:** http://localhost:5173
 - **API:** http://127.0.0.1:8000 (e.g. http://127.0.0.1:8000/alerts)
 
 ## Integrity protection (HMAC)
@@ -116,6 +121,34 @@ Both endpoints require bearer auth and are shown in the dashboard `Status` tab.
    - inserted count
    - validation reject count
 3. Call `/system/health` without bearer token and confirm `401`.
+
+## Ingestion lag report (Method A)
+
+Offline script to measure **indexer-to-middleware lag** per stored alert: difference between `alerts.timestamp` (Wazuh `@timestamp`) and `hmac_created_at` (set when the row is normalized). Useful for evaluation writeups; distribution is affected by `WAZUH_POLL_INTERVAL` and per-poll fetch size.
+
+```bash
+python scripts/ingestion_lag_report.py --limit 50
+```
+
+Optional: `--csv lag_report.csv`, `--verified` / `--unverified`, `--db path/to/wazuh_alerts.db`. Loads `WAZUH_DB_PATH` and `WAZUH_POLL_INTERVAL` from `.env` when present.
+
+## Raw vs normalized alert (Figure 4 / evaluation)
+
+Utility script that prints a terminal-friendly **raw Wazuh indexer document** next to the **normalized row shape** produced by the same logic as `wazuh_ingestion.py` (`_normalize_alert`). Loads `.env` from the repo root (same as other scripts).
+
+```bash
+python scripts/show_normalization_diff.py --from-indexer
+```
+
+Or from a saved JSON file (raw alert, list of alerts, or OpenSearch `_search` response):
+
+```bash
+python scripts/show_normalization_diff.py --raw-file sample_alert.json
+```
+
+Optional: `--output-json comparison.json` writes raw + normalized + field-mapping summary to one file.
+
+`--from-indexer` uses the same SSH tunnel and indexer credentials as live ingestion (`WAZUH_SSH_*`, `WAZUH_INDEXER_*`, `WAZUH_CA_CERT_PATH`, etc.); ensure those are set and reachable.
 
 ## Transport trust hardening
 
